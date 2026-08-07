@@ -47,6 +47,8 @@ from _schemas import (
     edge_is_legacy_for_endpoint,
     edge_legacy_replacement_message,
     edge_requires_confidence,
+    resolve_entity_dir,
+    resolve_node_kind,
 )
 
 WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]")
@@ -138,7 +140,7 @@ def find_all_pages(wiki_dir: Path) -> dict[str, Path]:
     """Map slug -> file path for all wiki pages."""
     pages = {}
     for subdir in ENTITY_DIRS:
-        dir_path = wiki_dir / subdir
+        dir_path = resolve_entity_dir(wiki_dir, subdir)
         if not dir_path.exists():
             continue
         for f in dir_path.glob("*.md"):
@@ -274,7 +276,7 @@ def check_experiment_claim_link(wiki_dir: Path, pages: dict[str, Path]) -> list[
         rel = str(fpath.relative_to(wiki_dir))
         target = extract_frontmatter_value(content, "target_claim")
         if target:
-            claim_path = wiki_dir / "claims" / f"{target}.md"
+            claim_path = resolve_entity_dir(wiki_dir, "claims") / f"{target}.md"
             if not claim_path.exists():
                 issues.append(LintIssue("🟡", "broken-claim-ref", rel,
                                         f"target_claim={target!r} but claims/{target}.md not found"))
@@ -303,7 +305,7 @@ def check_xref_asymmetry(wiki_dir: Path, pages: dict[str, Path]) -> list[LintIss
                     ref = ref.strip(",").strip()
                     if not ref:
                         continue
-                    ref_path = wiki_dir / "papers" / f"{ref}.md"
+                    ref_path = resolve_entity_dir(wiki_dir, "papers") / f"{ref}.md"
                     if ref_path.exists():
                         ref_content = ref_path.read_text(encoding="utf-8")
                         if f"[[{slug}]]" not in ref_content and f"[[{slug}|" not in ref_content:
@@ -315,7 +317,7 @@ def check_xref_asymmetry(wiki_dir: Path, pages: dict[str, Path]) -> list[LintIss
         if page_type == "papers":
             for match in WIKILINK_RE.finditer(content):
                 target = match.group(1).strip()
-                target_path = wiki_dir / "people" / f"{target}.md"
+                target_path = resolve_entity_dir(wiki_dir, "people") / f"{target}.md"
                 if target_path.exists():
                     ref_content = target_path.read_text(encoding="utf-8")
                     if f"[[{slug}]]" not in ref_content and f"[[{slug}|" not in ref_content:
@@ -330,7 +332,7 @@ def check_xref_asymmetry(wiki_dir: Path, pages: dict[str, Path]) -> list[LintIss
                     ref = ref.strip(",").strip()
                     if not ref:
                         continue
-                    ref_path = wiki_dir / "papers" / f"{ref}.md"
+                    ref_path = resolve_entity_dir(wiki_dir, "papers") / f"{ref}.md"
                     if ref_path.exists():
                         ref_content = ref_path.read_text(encoding="utf-8")
                         if f"[[{slug}]]" not in ref_content and f"[[{slug}|" not in ref_content:
@@ -345,7 +347,7 @@ def check_xref_asymmetry(wiki_dir: Path, pages: dict[str, Path]) -> list[LintIss
                     ref = ref.strip(",").strip()
                     if not ref:
                         continue
-                    ref_path = wiki_dir / "claims" / f"{ref}.md"
+                    ref_path = resolve_entity_dir(wiki_dir, "claims") / f"{ref}.md"
                     if ref_path.exists():
                         ref_content = ref_path.read_text(encoding="utf-8")
                         if f"[[{slug}]]" not in ref_content and f"[[{slug}|" not in ref_content:
@@ -357,7 +359,7 @@ def check_xref_asymmetry(wiki_dir: Path, pages: dict[str, Path]) -> list[LintIss
         if page_type == "experiments":
             target = extract_frontmatter_value(content, "target_claim")
             if target:
-                ref_path = wiki_dir / "claims" / f"{target}.md"
+                ref_path = resolve_entity_dir(wiki_dir, "claims") / f"{target}.md"
                 if ref_path.exists():
                     ref_content = ref_path.read_text(encoding="utf-8")
                     if slug not in ref_content:
@@ -369,7 +371,7 @@ def check_xref_asymmetry(wiki_dir: Path, pages: dict[str, Path]) -> list[LintIss
 
 
 def _node_kind(node_id: str) -> str:
-    return node_id.split("/", 1)[0] if "/" in node_id else ""
+    return resolve_node_kind(node_id)
 
 
 def _check_graph_node_exists(wiki_dir: Path, node_id: str,
@@ -388,7 +390,7 @@ def _check_graph_node_exists(wiki_dir: Path, node_id: str,
 def check_graph_edges(wiki_dir: Path, pages: dict[str, Path]) -> list[LintIssue]:
     """Check graph/edges.jsonl for consistency."""
     issues = []
-    edges_path = wiki_dir / "graph" / "edges.jsonl"
+    edges_path = resolve_entity_dir(wiki_dir, "graph") / "edges.jsonl"
     if not edges_path.exists():
         return issues
 
@@ -487,7 +489,7 @@ def check_graph_edges(wiki_dir: Path, pages: dict[str, Path]) -> list[LintIssue]
 def check_graph_citations(wiki_dir: Path, pages: dict[str, Path]) -> list[LintIssue]:
     """Check graph/citations.jsonl for bibliographic citation consistency."""
     issues = []
-    citations_path = wiki_dir / "graph" / "citations.jsonl"
+    citations_path = resolve_entity_dir(wiki_dir, "graph") / "citations.jsonl"
     if not citations_path.exists():
         return issues
 
@@ -715,7 +717,7 @@ def _fix_xref(wiki_dir: Path, issue: LintIssue, dry_run: bool) -> FixResult | No
         if not m:
             return None
         paper_slug, concept_slug = m.group(1), m.group(2)
-        target_path = wiki_dir / "papers" / f"{paper_slug}.md"
+        target_path = resolve_entity_dir(wiki_dir, "papers") / f"{paper_slug}.md"
         action = f"Add [[{concept_slug}]] to papers/{paper_slug}.md ## Related"
         if not dry_run:
             _append_to_section(target_path, "## Related", f"- [[{concept_slug}]]")
@@ -727,7 +729,7 @@ def _fix_xref(wiki_dir: Path, issue: LintIssue, dry_run: bool) -> FixResult | No
         if not m:
             return None
         person_slug, paper_slug = m.group(1), m.group(2)
-        target_path = wiki_dir / "people" / f"{person_slug}.md"
+        target_path = resolve_entity_dir(wiki_dir, "people") / f"{person_slug}.md"
         action = f"Add [[{paper_slug}]] to people/{person_slug}.md ## Key papers"
         if not dry_run:
             _append_to_section(target_path, "## Key papers", f"- [[{paper_slug}]]")
@@ -739,7 +741,7 @@ def _fix_xref(wiki_dir: Path, issue: LintIssue, dry_run: bool) -> FixResult | No
         if not m:
             return None
         paper_slug, claim_slug = m.group(1), m.group(2)
-        target_path = wiki_dir / "papers" / f"{paper_slug}.md"
+        target_path = resolve_entity_dir(wiki_dir, "papers") / f"{paper_slug}.md"
         action = f"Add [[{claim_slug}]] to papers/{paper_slug}.md ## Related"
         if not dry_run:
             _append_to_section(target_path, "## Related", f"- [[{claim_slug}]]")
@@ -751,7 +753,7 @@ def _fix_xref(wiki_dir: Path, issue: LintIssue, dry_run: bool) -> FixResult | No
         if not m:
             return None
         claim_slug, idea_slug = m.group(1), m.group(2)
-        target_path = wiki_dir / "claims" / f"{claim_slug}.md"
+        target_path = resolve_entity_dir(wiki_dir, "claims") / f"{claim_slug}.md"
         action = f"Add [[{idea_slug}]] to claims/{claim_slug}.md ## Linked ideas"
         if not dry_run:
             _append_to_section(target_path, "## Linked ideas", f"- [[{idea_slug}]]")
@@ -765,7 +767,7 @@ def _fix_xref(wiki_dir: Path, issue: LintIssue, dry_run: bool) -> FixResult | No
         claim_slug = m.group(1)
         # Extract experiment slug from issue.file: "experiments/foo.md" → "foo"
         exp_slug = Path(issue.file).stem
-        target_path = wiki_dir / "claims" / f"{claim_slug}.md"
+        target_path = resolve_entity_dir(wiki_dir, "claims") / f"{claim_slug}.md"
         action = f"Add {exp_slug} reference to claims/{claim_slug}.md ## Evidence summary"
         if not dry_run:
             _append_to_section(target_path, "## Evidence summary",
@@ -809,6 +811,13 @@ def main():
     parser.add_argument("--suggest", action="store_true",
                         help="Show actionable suggestions for non-auto-fixable issues")
     args = parser.parse_args()
+
+    # Fix encoding for Windows CJK output
+    if sys.stdout.encoding and sys.stdout.encoding.lower() in ('gbk', 'cp936', 'cp950'):
+        try:
+            sys.stdout.reconfigure(encoding='utf-8')
+        except Exception:
+            pass
 
     wiki_dir = Path(args.wiki_dir)
     if not wiki_dir.exists():

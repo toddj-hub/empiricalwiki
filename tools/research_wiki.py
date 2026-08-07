@@ -71,6 +71,7 @@ from _schemas import (  # noqa: E402
     CITATION_SOURCES,
     EDGE_CONFIDENCE_VALUES,
     ENTITY_DIRS,
+    GROUP_FOLDERS,
     SYMMETRIC_EDGE_TYPES,
     VALID_EDGE_TYPES,
     edge_is_legacy_for_endpoint,
@@ -79,6 +80,8 @@ from _schemas import (  # noqa: E402
     edge_is_symmetric,
     edge_legacy_replacement_message,
     edge_requires_confidence,
+    resolve_entity_dir,
+    resolve_node_kind,
 )
 
 DERIVED_DIR = "graph"
@@ -132,24 +135,28 @@ def slugify(title: str) -> str:
 def init_wiki(wiki_root: str) -> None:
     """Initialize wiki directory structure with all entity dirs and graph/.
 
-    Creates:
-      - 9 entity directories (papers, concepts, topics, people, ideas, experiments, claims, Summary, foundations)
-      - graph/ with empty edges.jsonl, citations.jsonl, context_brief.md, open_questions.md
-      - outputs/
+    Creates the Obsidian-friendly nested structure:
+      - 01_论文库/papers/
+      - 02_研究设计/{variables,datasets,models,mechanisms,hypotheses,identification,robustness,heterogeneity,tables}/
+      - 03_知识体系/{concepts,topics,foundations,Summary}/
+      - 04_研究者与想法/{people,ideas,experiments,claims}/
+      - 05_产出/outputs/
+      - _系统/graph/ with empty edges.jsonl, citations.jsonl, context_brief.md, open_questions.md
       - index.md, log.md (if they don't exist)
     """
     root = Path(wiki_root)
 
-    # Entity directories
+    # Create group folders and entity directories
     for d in ENTITY_DIRS:
-        (root / d).mkdir(parents=True, exist_ok=True)
+        resolved = resolve_entity_dir(root, d)
+        resolved.mkdir(parents=True, exist_ok=True)
 
     # Derived graph directory
-    graph = root / DERIVED_DIR
+    graph = resolve_entity_dir(root, DERIVED_DIR)
     graph.mkdir(parents=True, exist_ok=True)
 
     # Outputs directory
-    (root / "outputs").mkdir(parents=True, exist_ok=True)
+    resolve_entity_dir(root, "outputs").mkdir(parents=True, exist_ok=True)
 
     # Seed files (only if they don't already exist)
     _write_if_missing(root / "index.md", _initial_index())
@@ -198,7 +205,7 @@ def _truthy(value: object) -> bool:
 
 
 def _node_kind(node_id: str) -> str:
-    return node_id.split("/", 1)[0] if "/" in node_id else ""
+    return resolve_node_kind(node_id)
 
 
 def _validate_node_refs(root: Path, *node_ids: str) -> list[str]:
@@ -585,17 +592,17 @@ def rebuild_open_questions(wiki_root: str) -> None:
     gaps: list[str] = []
 
     # From papers: open questions
-    _collect_section_items(root / "papers", "Open questions", gaps, "paper")
+    _collect_section_items(resolve_entity_dir(root, "papers"), "Open questions", gaps, "paper")
 
     # From topics: research gaps + open problems
-    _collect_section_items(root / "topics", "Research gaps", gaps, "topic")
-    _collect_section_items(root / "topics", "Open problems", gaps, "topic")
+    _collect_section_items(resolve_entity_dir(root, "topics"), "Research gaps", gaps, "topic")
+    _collect_section_items(resolve_entity_dir(root, "topics"), "Open problems", gaps, "topic")
 
     # From concepts: open problems
-    _collect_section_items(root / "concepts", "Open problems", gaps, "concept")
+    _collect_section_items(resolve_entity_dir(root, "concepts"), "Open problems", gaps, "concept")
 
     # From claims: under-supported claims
-    claims_dir = root / "claims"
+    claims_dir = resolve_entity_dir(root, "claims")
     if claims_dir.exists():
         for f in sorted(claims_dir.glob("*.md")):
             fm = _parse_frontmatter(f)
@@ -895,9 +902,9 @@ def find_similar_concept(wiki_root: str, candidate_title: str,
 
     matches: list[dict] = []
     matches.extend(_scan_entity_dir_for_similar(
-        root / "foundations", "foundation", candidate_names))
+        resolve_entity_dir(root, "foundations"), "foundation", candidate_names))
     matches.extend(_scan_entity_dir_for_similar(
-        root / "concepts", "concept", candidate_names))
+        resolve_entity_dir(root, "concepts"), "concept", candidate_names))
 
     # Sort: foundations with high score first (they're terminal — prefer them),
     # then by score descending.
@@ -918,7 +925,7 @@ def find_similar_claim(wiki_root: str, candidate_title: str,
     Output: JSON list of {slug, title, tags, status, confidence, score, match_reason}.
     """
     root = Path(wiki_root)
-    claims_dir = root / "claims"
+    claims_dir = resolve_entity_dir(root, "claims")
     if not claims_dir.exists():
         print(json.dumps([]))
         return
@@ -998,7 +1005,7 @@ def find_similar_claim(wiki_root: str, candidate_title: str,
 def query_weak_claims(wiki_root: str, threshold: float = 0.5) -> None:
     """Find claims with low confidence or weak status."""
     root = Path(wiki_root)
-    claims_dir = root / "claims"
+    claims_dir = resolve_entity_dir(root, "claims")
     if not claims_dir.exists():
         print(json.dumps([]))
         return
@@ -1035,7 +1042,7 @@ def query_weak_claims(wiki_root: str, threshold: float = 0.5) -> None:
 def query_evidence_for(wiki_root: str, claim_slug: str) -> None:
     """Trace all evidence connected to a claim (papers, experiments, edges)."""
     root = Path(wiki_root)
-    claim_path = root / "claims" / f"{claim_slug}.md"
+    claim_path = resolve_entity_dir(root, "claims") / f"{claim_slug}.md"
 
     if not claim_path.exists():
         print(json.dumps({"status": "error",
@@ -1058,7 +1065,7 @@ def query_evidence_for(wiki_root: str, claim_slug: str) -> None:
 
     # Find linked experiments
     experiments: list[dict] = []
-    exp_dir = root / "experiments"
+    exp_dir = resolve_entity_dir(root, "experiments")
     if exp_dir.exists():
         for f in sorted(exp_dir.glob("*.md")):
             exp_fm = _parse_frontmatter(f)
@@ -1096,7 +1103,7 @@ def query_evidence_for(wiki_root: str, claim_slug: str) -> None:
 def query_ready_to_test(wiki_root: str) -> None:
     """Find ideas in proposed status with no linked experiments."""
     root = Path(wiki_root)
-    ideas_dir = root / "ideas"
+    ideas_dir = resolve_entity_dir(root, "ideas")
     if not ideas_dir.exists():
         print(json.dumps([]))
         return
@@ -1247,7 +1254,7 @@ def compile_context(wiki_root: str, purpose: str,
 
     # 1. Claims summary
     if b_claims > 0:
-        claims_dir = root / "claims"
+        claims_dir = resolve_entity_dir(root, "claims")
         if claims_dir.exists():
             items: list[tuple[int, str]] = []
             for f in sorted(claims_dir.glob("*.md")):
@@ -1276,7 +1283,7 @@ def compile_context(wiki_root: str, purpose: str,
 
     # 3. Failed ideas (anti-repetition memory)
     if b_failed > 0:
-        ideas_dir = root / "ideas"
+        ideas_dir = resolve_entity_dir(root, "ideas")
         if ideas_dir.exists():
             failed: list[str] = []
             for f in sorted(ideas_dir.glob("*.md")):
@@ -1295,7 +1302,7 @@ def compile_context(wiki_root: str, purpose: str,
 
     # 4. Paper summaries
     if b_papers > 0:
-        papers_dir = root / "papers"
+        papers_dir = resolve_entity_dir(root, "papers")
         if papers_dir.exists():
             items2: list[tuple[int, str]] = []
             for f in sorted(papers_dir.glob("*.md")):
@@ -1343,7 +1350,7 @@ def compile_context(wiki_root: str, purpose: str,
 
     # 6. Experiment summaries
     if b_experiments > 0:
-        exp_dir = root / "experiments"
+        exp_dir = resolve_entity_dir(root, "experiments")
         if exp_dir.exists():
             exp_lines: list[str] = []
             for f in sorted(exp_dir.glob("*.md")):
@@ -1500,7 +1507,7 @@ def get_maturity(wiki_root: str, as_json: bool = False) -> dict:
 
     # Count completed experiments
     exp_completed = 0
-    exp_dir = root / "experiments"
+    exp_dir = resolve_entity_dir(root, "experiments")
     if exp_dir.exists():
         for f in exp_dir.glob("*.md"):
             fm = _parse_frontmatter(f)
@@ -1929,8 +1936,8 @@ def topic_backfill(wiki_root: str) -> None:
     Idempotent: re-running on a wiki that's already backfilled is a no-op.
     """
     root = Path(wiki_root)
-    topics_dir = root / "topics"
-    papers_dir = root / "papers"
+    topics_dir = resolve_entity_dir(root, "topics")
+    papers_dir = resolve_entity_dir(root, "papers")
 
     if not topics_dir.exists() or not papers_dir.exists():
         print(json.dumps({

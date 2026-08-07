@@ -12,6 +12,8 @@ file is the machine-facing copy that the tools actually consume.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 # Entity directories. Summary lives at the wiki root, not under entities, but
 # lint treats it as an entity directory because it has frontmatter pages.
 ENTITY_DIRS = [
@@ -23,6 +25,78 @@ ENTITY_DIRS = [
     "ideas", "experiments", "claims", "Summary",
     "foundations",
 ]
+
+# Obsidian-facing group folders that nest entity directories for cleaner UX.
+# Entity dirs live inside these; tools resolve paths through this mapping.
+GROUP_FOLDERS: dict[str, str] = {
+    "papers": "01_论文库",
+    "variables": "02_研究设计",
+    "datasets": "02_研究设计",
+    "models": "02_研究设计",
+    "mechanisms": "02_研究设计",
+    "hypotheses": "02_研究设计",
+    "identification": "02_研究设计",
+    "robustness": "02_研究设计",
+    "heterogeneity": "02_研究设计",
+    "tables": "02_研究设计",
+    "assumptions": "02_研究设计",
+    "propositions": "02_研究设计",
+    "concepts": "03_知识体系",
+    "topics": "03_知识体系",
+    "foundations": "03_知识体系",
+    "Summary": "03_知识体系",
+    "people": "04_研究者与想法",
+    "ideas": "04_研究者与想法",
+    "experiments": "04_研究者与想法",
+    "claims": "04_研究者与想法",
+    "outputs": "05_产出",
+    "graph": "_系统",
+}
+
+_GROUP_SET: frozenset[str] = frozenset(GROUP_FOLDERS.values())
+
+
+def resolve_entity_dir(root: Path, name: str) -> Path:
+    """Resolve an entity directory path, searching group folders if needed."""
+    direct = root / name
+    if direct.exists():
+        return direct
+    if name in GROUP_FOLDERS:
+        nested = root / GROUP_FOLDERS[name] / name
+        if nested.exists():
+            return nested
+    return direct
+
+
+def resolve_node_kind(node_id: str) -> str:
+    """Extract entity kind from node_id, accounting for group folder nesting."""
+    if "/" not in node_id:
+        return ""
+    parts = node_id.split("/")
+    if parts[0] in _GROUP_SET:
+        return parts[1] if len(parts) > 1 else ""
+    return parts[0]
+
+
+def find_page(root: Path, node_id: str) -> Path | None:
+    """Find a wiki page by node_id (e.g., 'papers/some-slug').
+
+    Searches recursively within entity directories, so papers can be
+    organized into domain subfolders without breaking node references.
+    """
+    if "/" not in node_id:
+        return None
+    kind, slug = node_id.split("/", 1)
+    entity_dir = resolve_entity_dir(root, kind)
+    if not entity_dir.exists():
+        return None
+    # Try direct path first
+    direct = entity_dir / f"{slug}.md"
+    if direct.exists():
+        return direct
+    # Recursive search
+    results = list(entity_dir.rglob(f"{slug}.md"))
+    return results[0] if results else None
 
 EDGE_CONFIDENCE_VALUES = {"high", "medium", "low"}
 
@@ -279,6 +353,28 @@ EDGE_TYPE_SPECS: dict[str, dict[str, str]] = {
         "confidence": CONFIDENCE_NONE,
         "workflow": "idea",
     },
+    # wiki cross-reference derived edges.
+    "related_to": {
+        "from_kind": ANY_ENDPOINT,
+        "to_kind": ANY_ENDPOINT,
+        "direction": DIRECTION_SYMMETRIC,
+        "confidence": CONFIDENCE_NONE,
+        "workflow": "graph",
+    },
+    "has_contributor": {
+        "from_kind": ANY_ENDPOINT,
+        "to_kind": "people",
+        "direction": DIRECTION_DIRECTED,
+        "confidence": CONFIDENCE_NONE,
+        "workflow": "graph",
+    },
+    "authored_by": {
+        "from_kind": "papers",
+        "to_kind": "people",
+        "direction": DIRECTION_DIRECTED,
+        "confidence": CONFIDENCE_NONE,
+        "workflow": "graph",
+    },
 }
 
 # Accepted only for backwards compatibility; lint reports endpoint-specific
@@ -383,22 +479,23 @@ CONFIDENCE_REQUIRED_EDGE_TYPES = edge_types_matching(confidence=CONFIDENCE_REQUI
 VALID_EDGE_TYPES = set(EDGE_TYPE_SPECS) | LEGACY_EDGE_TYPES
 
 # Required frontmatter fields per entity type (lint.py reports a 🔴 if missing).
+# Aligned with docs/runtime-page-templates.zh.md and actual wiki page conventions.
 REQUIRED_FIELDS = {
-    "papers": ["title", "slug", "tags", "importance"],
-    "variables": ["title", "slug", "construct", "role", "measurement", "source_papers"],
+    "papers": ["title", "slug", "tags", "importance", "domain", "year"],
+    "variables": ["title", "slug", "type", "domain", "provenance", "measurement", "source_papers"],
     "datasets": ["title", "slug", "provider", "coverage", "unit", "fields"],
-    "models": ["title", "slug", "model_type", "dependent_variable", "core_variables", "fixed_effects"],
-    "mechanisms": ["title", "slug", "mechanism_type", "source_papers", "evidence"],
+    "models": ["title", "slug", "source_papers"],
+    "mechanisms": ["title", "slug", "type", "domain", "provenance", "source_papers", "evidence_strength", "empirical_status"],
     "hypotheses": ["title", "slug", "status", "source_papers", "mechanism"],
-    "identification": ["title", "slug", "strategy_type", "source_papers", "assumptions"],
-    "robustness": ["title", "slug", "check_type", "source_papers", "purpose"],
-    "heterogeneity": ["title", "slug", "grouping_variable", "source_papers", "rationale"],
+    "identification": ["title", "slug", "source_paper", "type"],
+    "robustness": ["title", "slug", "source_paper", "type"],
+    "heterogeneity": ["title", "slug", "source_paper", "type"],
     "tables": ["title", "slug", "table_type", "source_paper", "variables", "interpretation"],
     "assumptions": ["title", "slug", "assumption_type", "source_papers", "formal_statement"],
     "propositions": ["title", "slug", "proposition_type", "source_papers", "formal_statement"],
     "concepts": ["title", "tags", "maturity", "key_papers"],
     "topics": ["title", "tags"],
-    "people": ["name", "tags"],
+    "people": ["title", "slug", "research_areas", "key_papers"],
     "Summary": ["title", "scope", "key_topics"],
     "ideas": ["title", "slug", "status", "origin", "tags", "priority"],
     "experiments": ["title", "slug", "status", "target_claim", "hypothesis", "tags"],
@@ -447,21 +544,21 @@ VALID_VALUES = {
 # fixing that is a separate concern from centralizing the schema — see
 # devlog for the discussion. Preserved as-is here.
 FIELD_DEFAULTS = {
-    "papers": {"tags": "[]", "importance": "3"},
-    "variables": {"role": "other", "source_papers": "[]"},
+    "papers": {"tags": "[]", "importance": "3", "domain": "", "year": ""},
+    "variables": {"source_papers": "[]", "domain": "", "provenance": "published", "type": "variable", "measurement": ""},
     "datasets": {"fields": "[]"},
-    "models": {"core_variables": "[]", "fixed_effects": "[]"},
-    "mechanisms": {"source_papers": "[]", "evidence": "[]"},
+    "models": {"source_papers": "[]"},
+    "mechanisms": {"source_papers": "[]", "type": "mechanism", "domain": "", "provenance": "published", "evidence_strength": "medium", "empirical_status": "theoretical"},
     "hypotheses": {"status": "proposed", "source_papers": "[]"},
-    "identification": {"strategy_type": "other", "source_papers": "[]"},
-    "robustness": {"check_type": "other", "source_papers": "[]"},
-    "heterogeneity": {"source_papers": "[]"},
+    "identification": {"source_paper": "", "type": "identification"},
+    "robustness": {"source_paper": "", "type": "robustness"},
+    "heterogeneity": {"source_paper": "", "type": "heterogeneity"},
     "tables": {"variables": "[]"},
     "assumptions": {"assumption_type": "other", "source_papers": "[]"},
     "propositions": {"proposition_type": "other", "source_papers": "[]"},
     "concepts": {"tags": "[]", "maturity": "active", "key_papers": "[]"},
     "topics": {"tags": "[]"},
-    "people": {"tags": "[]"},
+    "people": {"research_areas": "[]", "key_papers": "[]"},
     "Summary": {"key_topics": "[]"},
     "ideas": {"tags": "[]", "priority": "3"},
     "experiments": {"tags": "[]"},

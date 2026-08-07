@@ -11,18 +11,16 @@
 
 平时请优先记住这个心智地图：
 
-### `wiki/` 是主要工作面
+### `wiki/` 是主要工作面（Obsidian 友好分组）
 
 - `wiki/index.md` 是所有 wiki 页面的目录
 - `wiki/log.md` 是 append-only 活动日志
-- `wiki/papers/` 存放实证论文结构化卡片
-- `wiki/variables/`、`wiki/datasets/`、`wiki/models/`、`wiki/mechanisms/`、`wiki/hypotheses/`、`wiki/identification/`、`wiki/robustness/`、`wiki/heterogeneity/`、`wiki/tables/` 存放实证研究设计层
-- `wiki/assumptions/`、`wiki/propositions/` 存放理论建模层（模型原语与形式化结论）；与 `wiki/mechanisms/`、`wiki/hypotheses/` 共同把理论与实证接在同一张 graph 上
-- `wiki/concepts/`、`wiki/topics/`、`wiki/foundations/` 存放可复用知识结构
-- `wiki/people/`、`wiki/ideas/`、`wiki/experiments/`、`wiki/claims/` 存放研究者、假设、实验和断言
-- `wiki/Summary/` 存放领域级综述
-- `wiki/outputs/` 存放生成产物
-- `wiki/graph/` 是派生状态，禁止手动编辑
+- `wiki/01_论文库/papers/` 存放实证论文结构化卡片
+- `wiki/02_研究设计/` 存放实证研究设计层 + 理论建模层：`variables/`、`datasets/`、`models/`、`mechanisms/`、`hypotheses/`、`identification/`、`robustness/`、`heterogeneity/`、`tables/`、`assumptions/`（模型原语）、`propositions/`（形式化结论）
+- `wiki/03_知识体系/` 存放可复用知识结构：`concepts/`、`topics/`、`foundations/`、`Summary/`
+- `wiki/04_研究者与想法/` 存放研究者、假设、实验和断言：`people/`、`ideas/`、`experiments/`、`claims/`
+- `wiki/05_产出/outputs/` 存放生成产物
+- `wiki/_系统/graph/` 是派生状态，禁止手动编辑
 - 想把 wiki 看成带图谱/搜索/反链的本地网站：跑 `tools/view.sh`，详见 `docs/view-quartz.zh.md`（基于 Quartz，只读渲染，不改内容）
 
 ### 格式护栏
@@ -63,7 +61,11 @@
 [[耐心资本]]        ← 中文实证论文允许使用 CJK slug
 ```
 
-**命名规范**：英文全小写、连字符分隔、无空格；中文标题允许保留 CJK 字符。
+**命名规范**：
+- **中文论文 slug**：`作者姓氏-年份-关键词1-关键词2`（如 `吕冰洋-2024-省以下财政收入体制-非税收入`）——禁止使用英文音译长串
+- **英文论文 slug**：`author-year-keyword`（如 `ang-2025-adaptive-political-economy`）——保持现有格式
+- **概念/方法 slug**：英文或 CJK 均可，优先可读性，长度 ≤60 字符
+- 禁止模式：`zuozhe-ming-2018-zhongwen-lunwen-biaoti-yinyi-changchuan`（中文论文的英文音译 slug）
 
 ---
 
@@ -180,3 +182,74 @@
 | `/survey` | `skills/survey/SKILL.md` | 手动 |
 | `/research` | `skills/research/SKILL.md` | 手动 |
 | `/rebuttal` | `skills/rebuttal/SKILL.md` | 手动 |
+
+---
+
+## 原文通路规程
+
+Agent 从 Obsidian 笔记查找原文的标准路径（优先级递减）：
+
+1. **paper 卡片 `zotero_key`** → Zotero MCP `get_item_details` → PDF 附件 / 完整书目
+2. **paper 卡片 `pdf_path`** → 文献包直接打开 PDF
+3. **`zotero_key` + `pdf_path` 均缺失** → Zotero MCP `search_library`（title/author 模糊匹配）
+4. **仍未找到** → 标记 `NEEDS_SOURCE`，记录到 paper 卡片的 `## 溯源状态`
+
+原文摘抄存入 `raw/notes/`，在 paper 卡片的引用溯源表中标注 PDF 页码。
+
+### 配置
+
+- **文献包根目录**：`C:\Users\HONOR\Desktop\文献包`
+- **Zotero MCP 端点**：`http://127.0.0.1:23120/mcp`（20 个工具可用）
+- **paper 卡片字段**：
+  - `zotero_key`：Zotero 条目 ID（8 位字母数字，如 `THJGZC9A`）
+  - `pdf_path`：文献包内 PDF 相对路径（如 `T/Tang-2020-Institutional-Foundation.pdf`）
+  - `source_status`：`zotero_linked` | `pdf_only` | `needs_source`
+
+---
+
+## 论文阅读双模规则（2026-07-22）
+
+每篇文献的阅读服务于两个目标：「内容积累」和「写法学习」。
+
+### 快速模式触发条件（满足任一）
+
+- 用户说"查一下XX""补引用""找素材""搜文献"
+- 论文 importance ≤ 3 且用户未指定深度阅读
+
+**快速模式操作**：搜索→定位相关段落→摘抄原文≥30字（不设上限，有用的全摘）→写入章节素材库「关键引用溯源」表→汇报"为ChX主题积累了Y条引用素材"。
+
+### 深度模式触发条件（满足任一）
+
+- 用户说"拆解这篇""学习一下""精读""读论文"
+- 论文 importance ≥ 4
+- 论文发表在顶刊（经济研究/管理世界/AER/Econometrica/JPE/QJE等）
+- 论文直接对应论文章节核心论点
+
+**深度模式操作（四步，必须全部执行）**：
+
+- **第一步-内容提取**：摘抄写入 `raw/notes/{paper-slug}.md`（不限条数、不限字数、完整存档），同时精选最相关条目写入章节素材库「关键引用溯源」表（四列格式，追加第五列"与论文关联"）
+- **第二步-写法拆解**：将论文的摘要/引言/文献综述/方法/结果/讨论/结论逐一拆解，标注具体可迁移的技法
+- **第三步-方法论反哺**：将拆解出的新技法写入 `03_知识体系/方法论/经济学论文写作模式/` 对应子目录的「优秀范例」或「常见错误」section，标注来源论文
+- **第四步-汇报**："深度阅读XX论文：内容积累Y条→raw/notes/ + 写法拆解Z个技法→方法论/ + Skill更新建议W条"
+
+### 摘抄双层存储（与原文通路规程对齐）
+
+- `raw/notes/{paper-slug}.md`：全文所有摘抄的原始存档，不限条数、不限字数
+- 素材库「关键引用溯源」表：从 raw/notes 中精选最相关的条目，四列格式（段落位置→引文→原文摘抄≥30字→来源页码），追加第五列"与论文关联"
+
+### Skill更新阈值（两层）
+
+- **笔记层**（每次深度阅读都做）：追加到对应方法笔记的「优秀范例」或「常见错误」
+- **Skill层**（积累到阈值才触发）：当某方法笔记的「优秀范例」≥5条 或「常见错误」≥8条时，触发一次skill更新，将笔记中的模式提炼为写作规范规则。触发时主动告知用户："XX部分已积累N条范例/M条错误，建议更新写作skill，是否执行？"
+
+### 禁止行为
+
+- 深度模式下只摘抄不拆解写法
+- 摘抄设上限或断尾
+- 素材库四列表格出现"待填充"
+
+### 政策背景查询规则（写作前）
+
+- 写作引言/研究背景/政策建议段落前，先查 `07_政策与法规/导航`，检索相关条目
+- 摘抄写入对应章节素材库的「制度背景素材」section 后再动笔写正文
+- 政策引用格式：`[[07_政策与法规/分类/文件名]]`（日期）+ 核心内容摘抄
